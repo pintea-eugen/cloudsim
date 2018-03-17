@@ -58,6 +58,8 @@ public class Host {
 	/** The datacenter where the host is placed. */
 	private Datacenter datacenter;
 
+	private int rackNumber;
+
 	/**
 	 * Instantiates a new host.
 	 * 
@@ -630,4 +632,11 @@ public class Host {
 		this.datacenter = datacenter;
 	}
 
+	public int getRackNumber() {
+		return rackNumber;
+	}
+
+	public void setRackNumber(int rackNumber) {
+		this.rackNumber = rackNumber;
+	}
 }
