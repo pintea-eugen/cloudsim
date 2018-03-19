@@ -8,15 +8,12 @@
 
 package org.cloudbus.cloudsim.power;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.cloudbus.cloudsim.Datacenter;
-import org.cloudbus.cloudsim.DatacenterCharacteristics;
-import org.cloudbus.cloudsim.Log;
-import org.cloudbus.cloudsim.Storage;
-import org.cloudbus.cloudsim.Vm;
-import org.cloudbus.cloudsim.VmAllocationPolicy;
+import org.cloudbus.cloudsim.*;
+import org.cloudbus.cloudsim.cooling.CoolingSystem;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.CloudSimTags;
 import org.cloudbus.cloudsim.core.SimEvent;
@@ -74,6 +71,14 @@ public class PowerDatacenter extends Datacenter {
 		setDisableMigrations(false);
 		setCloudletSubmitted(-1);
 		setMigrationCount(0);
+		CoolingSystem.init();
+	}
+
+	@Override
+	protected void setLastProcessTime(double lastProcessTime) {
+		super.setLastProcessTime(lastProcessTime);
+        CoolingSystem.computeToutTemperatures( getCharacteristics().getHostList());
+        CoolingSystem.computeTinForServers(getCharacteristics().getHostList());
 	}
 
 	@Override

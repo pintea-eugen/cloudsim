@@ -8,28 +8,29 @@
 
 package org.cloudbus.cloudsim.power;
 
-import java.util.List;
-
 import org.cloudbus.cloudsim.HostDynamicWorkload;
 import org.cloudbus.cloudsim.Pe;
 import org.cloudbus.cloudsim.VmScheduler;
+import org.cloudbus.cloudsim.cooling.CoolingSystem;
 import org.cloudbus.cloudsim.power.models.PowerModel;
 import org.cloudbus.cloudsim.provisioners.BwProvisioner;
 import org.cloudbus.cloudsim.provisioners.RamProvisioner;
 
+import java.util.List;
+
 /**
  * PowerHost class enables simulation of power-aware hosts.
- * 
+ *
  * <br/>If you are using any algorithms, policies or workload included in the power package please cite
  * the following paper:<br/>
- * 
+ *
  * <ul>
  * <li><a href="http://dx.doi.org/10.1002/cpe.1867">Anton Beloglazov, and Rajkumar Buyya, "Optimal Online Deterministic Algorithms and Adaptive
  * Heuristics for Energy and Performance Efficient Dynamic Consolidation of Virtual Machines in
  * Cloud Data Centers", Concurrency and Computation: Practice and Experience (CCPE), Volume 24,
  * Issue 13, Pages: 1397-1420, John Wiley & Sons, Ltd, New York, USA, 2012</a>
  * </ul>
- * 
+ *
  * @author Anton Beloglazov
  * @since CloudSim Toolkit 2.0
  */
@@ -40,7 +41,7 @@ public class PowerHost extends HostDynamicWorkload {
 
 	/**
 	 * Instantiates a new PowerHost.
-	 * 
+	 *
 	 * @param id the id of the host
 	 * @param ramProvisioner the ram provisioner
 	 * @param bwProvisioner the bw provisioner
@@ -62,34 +63,55 @@ public class PowerHost extends HostDynamicWorkload {
 
 	/**
 	 * Gets the power. For this moment only consumed by all PEs.
-	 * 
+	 *
 	 * @return the power
 	 */
 	public double getPower() {
+//		double totalPower = getPower(getUtilizationOfCpu());// + getCoolingPower(CoolingSystem.tSupply);
+//		System.out.println("The power consumed by host "+getId()+ " is "+totalPower);
+//		//System.out.println("The electrical power by host "+getId()+ " is "+getPower(getUtilizationOfCpu()));
+//		//System.out.println("The cooling power by host "+getId()+ " is "+ getCoolingPower(CoolingSystem.tSupply));
+//		return totalPower;
 		return getPower(getUtilizationOfCpu());
+	}
+
+	private double getCoolingPower(double tSupply, double electricalPower) {
+		double COP = CoolingSystem.tSupply * CoolingSystem.tSupply * CoolingSystem.a + CoolingSystem.tSupply * CoolingSystem.b + CoolingSystem.c;
+		return (electricalPower/COP);
 	}
 
 	/**
 	 * Gets the current power consumption of the host. For this moment only consumed by all PEs.
-	 * 
+	 *
 	 * @param utilization the utilization percentage (between [0 and 1]) of a resource that
-         * is critical for power consumption
-	 * @return the power consumption
+	 * is critical for power consumption
+	 * @return the power consumption including the cooling power
 	 */
 	protected double getPower(double utilization) {
 		double power = 0;
 		try {
-			power = getPowerModel().getPower(utilization);
+			power = getPowerModel().getPower(utilization) + getCoolingPower(CoolingSystem.tSupply, getPowerModel().getPower(utilization));
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(0);
 		}
 		return power;
 	}
+    public double getElectricalPower(double utilization) {
+        double power = 0;
+        try {
+            power = getPowerModel().getPower(utilization);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
+        return power;
+    }
 
 	/**
 	 * Gets the max power that can be consumed by the host.
-	 * 
+	 *
 	 * @return the max power
 	 */
 	public double getMaxPower() {
@@ -105,7 +127,7 @@ public class PowerHost extends HostDynamicWorkload {
 
 	/**
 	 * Gets the energy consumption using linear interpolation of the utilization change.
-	 * 
+	 *
 	 * @param fromUtilization the initial utilization percentage
 	 * @param toUtilization the final utilization percentage
 	 * @param time the time
@@ -122,7 +144,7 @@ public class PowerHost extends HostDynamicWorkload {
 
 	/**
 	 * Sets the power model.
-	 * 
+	 *
 	 * @param powerModel the new power model
 	 */
 	protected void setPowerModel(PowerModel powerModel) {
@@ -131,7 +153,7 @@ public class PowerHost extends HostDynamicWorkload {
 
 	/**
 	 * Gets the power model.
-	 * 
+	 *
 	 * @return the power model
 	 */
 	public PowerModel getPowerModel() {
