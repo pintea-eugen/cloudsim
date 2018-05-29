@@ -1,19 +1,40 @@
 package org.cloudbus.cloudsim.cooling;
 
+import org.cloudbus.cloudsim.Pe;
+import org.cloudbus.cloudsim.cooling.heatreuse.HeatExchangeSystem;
 import org.cloudbus.cloudsim.power.PowerHost;
+import org.cloudbus.cloudsim.power.models.PowerModelLinear;
+import org.cloudbus.cloudsim.provisioners.PeProvisionerSimple;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
-public class BlueSimCoolingSystem extends CoolingSystem {
+import static org.cloudbus.cloudsim.cooling.constants.ThermoDynamicConstants.AIR_DENSITY;
+import static org.cloudbus.cloudsim.cooling.constants.ThermoDynamicConstants.AIR_SPECIFIC_HEAT;
 
-    private static final int NUM_SERVERS_INFLUENCED_THERMALLY = 20;
+public class BlueSimCoolingSystem extends PowerCoolingSystem {
+
+  //  private static final int NUM_SERVERS_INFLUENCED_THERMALLY = 20;
 
     public BlueSimCoolingSystem(List<PowerHost> powerHostList) {
-        airFlow = 5 * 3600;
+        airFlow = 145.93; // 145.93 m3/hour, 40.54 l/hour,5l/sec = 18 m3/hour
         k = airFlow * AIR_DENSITY * AIR_SPECIFIC_HEAT;
+        NUM_SERVERS_INFLUENCED_THERMALLY = 20;
         sumAlpha = new double[NUM_SERVERS_INFLUENCED_THERMALLY];
         initializeAlpha();
-        initializeTemperatureMatrixes(powerHostList);
+        initializeTemperatureMatrices(powerHostList);
+        computeSumAlpha();
+    }
+
+    public BlueSimCoolingSystem(List<PowerHost> powerHostList, HeatExchangeSystem heatExchangeSystem) {
+        super(heatExchangeSystem);
+        airFlow = 145.93; // 145.93 m3/hour, 40.54 l/hour,5l/sec = 18 m3/hour
+        k = airFlow * AIR_DENSITY * AIR_SPECIFIC_HEAT;
+        NUM_SERVERS_INFLUENCED_THERMALLY = 20;
+        sumAlpha = new double[NUM_SERVERS_INFLUENCED_THERMALLY];
+        initializeAlpha();
+        initializeTemperatureMatrices(powerHostList);
         computeSumAlpha();
     }
 
@@ -41,65 +62,40 @@ public class BlueSimCoolingSystem extends CoolingSystem {
                 {0.000025, 0.000024, 0.000026, 0.000032, 0.000045, 0.000073, 0.000067, 0.000078, 0.000093, 0.000093, 0.000091, 0.000093, 0.000096, 0.000114, 0.000148, 0.000304, 0.000338, 0.000401, 0.000469, 0.000498}};
     }
 
-    @Override
-    public void initializeTemperatureMatrixes(List<PowerHost> powerHostList) {
-        tIn = new double[powerHostList.size()];
-        tOut = new double[powerHostList.size()];
-    }
 
-    public void computeSumAlpha() {
-        for (int i = 0; i < NUM_SERVERS_INFLUENCED_THERMALLY; i++) {
-            for (int j = 0; j < NUM_SERVERS_INFLUENCED_THERMALLY; j++) {
-                sumAlpha[i] += alpha[j][i];
-            }
-        }
-    }
-
-    @Override
-    public double[] computeToutTemperatures(List<PowerHost> powerHostList) {
-        double powerConsumed;
-
-        for (int j = 0; j < powerHostList.size(); j++) {
-            powerConsumed = powerHostList.get(j).getElectricalPower(powerHostList.get(j).getUtilizationOfCpu());
-            tOut[j] = T_SUPPLY + powerConsumed / ((1 - sumAlpha[j % NUM_SERVERS_INFLUENCED_THERMALLY]) * k);
+    public static void main(String[] args) {
+        int i,j;
+        double MIPS = 5000;
+        double MAX_POWER = 300;
+        double STATIC_POWER_PERCENT = 0.3;
+        double TIME = 10;
+        List<Pe> peList = new ArrayList<Pe>();
+        peList.add(new Pe(0, new PeProvisionerSimple(MIPS)));
+        //peList.add(new Pe(1, new PeProvisionerSimple(MIPS)));
+        List<PowerHost> powerHostList = new ArrayList<>(20);
+        for (i = 0 ;i < 20; i++) {
+            PowerHost powerHost = new PowerHost(i, null, null, 0, peList, null, new PowerModelLinear(MAX_POWER, STATIC_POWER_PERCENT));
+            double randomUtilization = (double) new Random().nextInt(5000);
+            /*int randOff = new Random().nextInt(10);
+            if(randOff % 2 == 1)
+                randomUtilization = 0;*/
+            powerHost.setUtilizationMips(randomUtilization);
+            powerHostList.add(powerHost);
         }
 
-        return tOut;
-    }
+        BlueSimCoolingSystem blueSimCoolingSystem = new BlueSimCoolingSystem(powerHostList);
+        blueSimCoolingSystem.computeToutTemperatures(powerHostList, INITIAL_SUPPLY_TEMPERATURE);
 
-    public double[] computeSumAlphaToutForRackGroups(List<PowerHost> powerHostList) {
-        double sumAlphaTout[] = new double[powerHostList.size() / NUM_SERVERS_INFLUENCED_THERMALLY];
-
-
-        for (PowerHost powerHost : powerHostList) {
-            int serverId = powerHost.getId();
-
-            sumAlphaTout[serverId / NUM_SERVERS_INFLUENCED_THERMALLY] +=
-                    alpha[serverId][serverId % NUM_SERVERS_INFLUENCED_THERMALLY] * tOut[serverId];
+        System.out.println("Sum alfa for serveres:");
+        for(i=0;i<powerHostList.size();i++) {
+            System.out.println(blueSimCoolingSystem.sumAlpha[i]);
         }
 
-        return sumAlphaTout;
-    }
-
-    @Override
-    public void computeTinForServers(List<PowerHost> powerHostList) {
-        double[] tIn = new double[powerHostList.size()];
-        double[] sumAlphaTout = computeSumAlphaToutForRackGroups(powerHostList);
-
-        for (PowerHost powerHost : powerHostList) {
-            int serverId = powerHost.getId();
-
-            if (tOut[serverId] == T_SUPPLY) {
-                tIn[serverId] = T_SUPPLY;
-            } else {
-                tIn[serverId] = sumAlphaTout[serverId / NUM_SERVERS_INFLUENCED_THERMALLY] +
-                        T_SUPPLY * (1 - sumAlpha[serverId % NUM_SERVERS_INFLUENCED_THERMALLY]);
-            }
-
-            if (tIn[serverId] > maxTin) {
-                maxTin = tIn[serverId];
-            }
-
+        System.out.println();
+        for(i=0;i<powerHostList.size();i++) {
+            System.out.println(blueSimCoolingSystem.tOut[powerHostList.get(i).getId()]);
         }
+
+        System.out.println("Maximum supply temperature: " + blueSimCoolingSystem.calculateMaximumSupplyTemperature(powerHostList));
     }
 }

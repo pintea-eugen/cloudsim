@@ -1,5 +1,6 @@
 package org.cloudbus.cloudsim.cooling;
 
+import org.cloudbus.cloudsim.cooling.heatreuse.HeatExchangeSystem;
 import org.cloudbus.cloudsim.power.PowerHost;
 
 import java.io.PipedOutputStream;
@@ -12,27 +13,34 @@ public abstract class CoolingSystem {
     protected double[] sumAlpha;
     protected double[] tOut;
     protected double[] tIn;
-    protected double maxTin = 0;
     protected double airFlow = 353;
 
     //TODO replace public with private
-    public static final double T_SUPPLY = 24.0;
+    public static final double INITIAL_SUPPLY_TEMPERATURE = 18.0;
+    public static final double MAX_ACCEPTABLE_TEMPERATURE = 29.5;
 
-    public static final double A = 0.0068;
-    public static final double B = 0.0008;
-    public static final double C = 0.458;
-    public static final double AIR_DENSITY = 1.2;
-    public static final double AIR_SPECIFIC_HEAT = 1.005;
+    protected HeatExchangeSystem heatExchangeSystem;
 
     public CoolingSystem() {
     }
 
+    public CoolingSystem(HeatExchangeSystem heatExchangeSystem) {
+        this.heatExchangeSystem = heatExchangeSystem;
+    }
+
     public abstract void initializeAlpha();
 
-    public abstract void initializeTemperatureMatrixes(List<PowerHost> powerHostList);
+    public abstract void initializeTemperatureMatrices(List<PowerHost> powerHostList);
 
-    public abstract double[] computeToutTemperatures(List<PowerHost> powerHostList);
+    public abstract double[] computeToutTemperatures(List<PowerHost> powerHostList, double supplyTemperature);
 
-    public abstract void computeTinForServers(List<PowerHost> powerHostList);
+    public abstract double computeMaxTinForServers(List<PowerHost> powerHostList, double supplyTemperature);
 
+    public double calculateRemovedHeat(double airFlow, double tIn, double tOut) {
+        return heatExchangeSystem.calculateRemovedHeat(airFlow, tIn, tOut);
+    }
+
+    public double calculateSuppliedHeat(double powerIT) {
+        return heatExchangeSystem.calculateSuppliedHeat(powerIT);
+    }
 }
