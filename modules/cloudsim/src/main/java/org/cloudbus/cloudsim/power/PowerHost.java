@@ -40,6 +40,16 @@ public class PowerHost extends HostDynamicWorkload {
 	private PowerModel powerModel;
 
 	/**
+	 * Exhaust temperature of the host
+	 */
+	private double tout;
+
+	/**
+	 * Intake temperature of the host
+	 */
+	private double tin;
+
+	/**
 	 * Instantiates a new PowerHost.
 	 *
 	 * @param id the id of the host
@@ -90,7 +100,8 @@ public class PowerHost extends HostDynamicWorkload {
 	protected double getPower(double utilization) {
 		double power = 0;
 		try {
-			power = getPowerModel().getPower(utilization) + getCoolingPower(CoolingSystem.tSupply, getPowerModel().getPower(utilization));
+			//calculam doar la sfarsit cooling power
+			power = getPowerModel().getPower(utilization);// + getCoolingPower(CoolingSystem.tSupply, getPowerModel().getPower(utilization));
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -160,4 +171,20 @@ public class PowerHost extends HostDynamicWorkload {
 		return powerModel;
 	}
 
+
+	public double getTout() {
+		return tout;
+	}
+
+	public void setTout(double tout) {
+		this.tout = tout;
+	}
+
+	public double getTin() {
+		return tin;
+	}
+
+	public void setTin(double tin) {
+		this.tin = tin;
+	}
 }

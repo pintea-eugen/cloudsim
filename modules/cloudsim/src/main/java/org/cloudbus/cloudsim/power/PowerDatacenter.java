@@ -9,6 +9,7 @@
 package org.cloudbus.cloudsim.power;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +19,7 @@ import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.CloudSimTags;
 import org.cloudbus.cloudsim.core.SimEvent;
 import org.cloudbus.cloudsim.core.predicates.PredicateType;
+import org.cloudbus.cloudsim.util.MathUtil;
 
 /**
  * PowerDatacenter is a class that enables simulation of power-aware data centers.
@@ -40,6 +42,12 @@ public class PowerDatacenter extends Datacenter {
 	/** The datacenter consumed power. */
 	private double power;
 
+	/** The electrical power consumed by the datacenter */
+	private double electricalPower;
+
+	/** The cooling power consumed by the datacenter */
+	private double coolingPower;
+
 	/** Indicates if migrations are disabled or not. */
 	private boolean disableMigrations;
 
@@ -48,6 +56,18 @@ public class PowerDatacenter extends Datacenter {
 
 	/** The VM migration count. */
 	private int migrationCount;
+
+	/**
+	 * This is compute as a the difference between the mean
+	 * tout values of all the servers and the mean tin of
+	 * all the servers
+	 */
+	private double meanServerTemperature = CoolingSystem.tSupply;
+
+	/**
+	 * The number of the servers that are violating the thermal SLA
+	 */
+	private double thermalSLAViolatingServersNumber = 0;
 
 	/**
 	 * Instantiates a new PowerDatacenter.
@@ -68,6 +88,8 @@ public class PowerDatacenter extends Datacenter {
 		super(name, characteristics, vmAllocationPolicy, storageList, schedulingInterval);
 
 		setPower(0.0);
+		setElectricalPower(0.0);
+		setCoolingPower(0.0);
 		setDisableMigrations(false);
 		setCloudletSubmitted(-1);
 		setMigrationCount(0);
@@ -77,8 +99,25 @@ public class PowerDatacenter extends Datacenter {
 	@Override
 	protected void setLastProcessTime(double lastProcessTime) {
 		super.setLastProcessTime(lastProcessTime);
-        CoolingSystem.computeToutTemperatures( getCharacteristics().getHostList());
+		CoolingSystem.computeToutTemperatures( getCharacteristics().getHostList());
         CoolingSystem.computeTinForServers(getCharacteristics().getHostList());
+		setToutServerTemperatures(CoolingSystem.getTout());
+		setTinServerTemperatures(CoolingSystem.getTin());
+
+	}
+
+	private void setToutServerTemperatures(double[] temperatures){
+		List<PowerHost> hostList = getCharacteristics().getHostList();
+		for(int i = 0; i < temperatures.length; i++){
+			hostList.get(i).setTout(temperatures[i]);
+		}
+	}
+
+	private void setTinServerTemperatures(double[] temperatures){
+		List<PowerHost> hostList = getCharacteristics().getHostList();
+		for(int i = 0; i < temperatures.length; i++){
+			hostList.get(i).setTin(temperatures[i]);
+		}
 	}
 
 	@Override
@@ -165,6 +204,18 @@ public class PowerDatacenter extends Datacenter {
 		return 0;
 	}
 
+	private double getCoolingPower(double electricalPower) {
+		return CoolingSystem.getCoolingPower(electricalPower);
+	}
+
+	public static double mean(double[] m) {
+		double sum = 0;
+		for (int i = 0; i < m.length; i++) {
+			sum += m[i];
+		}
+		return sum / m.length;
+	}
+
 	/**
 	 * Update cloudet processing without scheduling future events.
 	 * 
@@ -231,7 +282,26 @@ public class PowerDatacenter extends Datacenter {
 					timeFrameDatacenterEnergy);
 		}
 
-		setPower(getPower() + timeFrameDatacenterEnergy);
+		setElectricalPower(getElectricalPower() + timeFrameDatacenterEnergy);
+		setCoolingPower(getCoolingPower() + getCoolingPower(timeFrameDatacenterEnergy));
+		setPower(getPower() + timeFrameDatacenterEnergy + getCoolingPower(timeFrameDatacenterEnergy));
+
+		//calculating mean servers temeprature value
+//		double meanTin = mean(CoolingSystem.getTin());
+//		double meanTout = mean(CoolingSystem.getTout());
+//		double previousMean = meanServerTemperature;
+//		double actualMean = (meanTin + meanTout) / 2;
+//        setMeanServerTemperature((previousMean + actualMean) /2 );
+
+		double numThermalSLAViolatingServers = (double) CoolingSystem.countThermalSLAViolatingServers();
+		setThermalSLAViolatingServersNumber((getThermalSLAViolatingServersNumber() + numThermalSLAViolatingServers )/2);
+		double meanTout = mean(CoolingSystem.getTout());
+        setMeanServerTemperature((meanTout + getMeanServerTemperature()) /2 );
+
+
+
+
+
 
 		checkCloudletCompletion();
 
@@ -282,6 +352,23 @@ public class PowerDatacenter extends Datacenter {
 	 */
 	protected void setPower(double power) {
 		this.power = power;
+	}
+
+
+	public double getElectricalPower() {
+		return electricalPower;
+	}
+
+	public void setElectricalPower(double electricalPower) {
+		this.electricalPower = electricalPower;
+	}
+
+	public double getCoolingPower() {
+		return coolingPower;
+	}
+
+	public void setCoolingPower(double coolingPower) {
+		this.coolingPower = coolingPower;
 	}
 
 	/**
@@ -361,4 +448,36 @@ public class PowerDatacenter extends Datacenter {
 		setMigrationCount(getMigrationCount() + 1);
 	}
 
+	/**
+	 * Get the mean difference between all the servers tin and tout
+	 * @return
+	 */
+	public double getMeanServerTemperature() {
+		return meanServerTemperature;
+	}
+
+	/**
+	 * /**
+	 * Get the mean difference between all the servers tin and tout
+	 * @param meanServerTemperature
+	 */
+	public void setMeanServerTemperature(double meanServerTemperature) {
+		this.meanServerTemperature = meanServerTemperature;
+	}
+
+	/**
+	 * Returns the number of SLA violating server mean number
+	 * @return
+	 */
+	public double getThermalSLAViolatingServersNumber() {
+		return thermalSLAViolatingServersNumber;
+	}
+
+	/**
+	 * Sets the number of SLA violating server mean number
+	 * @return
+	 */
+	public void setThermalSLAViolatingServersNumber(double thermalSLAViolatingServersNumber) {
+		this.thermalSLAViolatingServersNumber = thermalSLAViolatingServersNumber;
+	}
 }
