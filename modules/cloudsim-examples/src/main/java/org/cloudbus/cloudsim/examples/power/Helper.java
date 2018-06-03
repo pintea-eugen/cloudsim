@@ -12,21 +12,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
-import org.cloudbus.cloudsim.Cloudlet;
-import org.cloudbus.cloudsim.CloudletSchedulerDynamicWorkload;
-import org.cloudbus.cloudsim.Datacenter;
-import org.cloudbus.cloudsim.DatacenterBroker;
-import org.cloudbus.cloudsim.DatacenterCharacteristics;
-import org.cloudbus.cloudsim.Host;
-import org.cloudbus.cloudsim.HostDynamicWorkload;
-import org.cloudbus.cloudsim.HostStateHistoryEntry;
-import org.cloudbus.cloudsim.Log;
-import org.cloudbus.cloudsim.Pe;
-import org.cloudbus.cloudsim.Storage;
-import org.cloudbus.cloudsim.Vm;
-import org.cloudbus.cloudsim.VmAllocationPolicy;
-import org.cloudbus.cloudsim.VmSchedulerTimeSharedOverSubscription;
-import org.cloudbus.cloudsim.VmStateHistoryEntry;
+import org.apache.commons.math3.analysis.function.Power;
+import org.cloudbus.cloudsim.*;
+import org.cloudbus.cloudsim.cooling.CoolingSystem;
 import org.cloudbus.cloudsim.power.PowerDatacenter;
 import org.cloudbus.cloudsim.power.PowerDatacenterBroker;
 import org.cloudbus.cloudsim.power.PowerHost;
@@ -257,6 +245,8 @@ public class Helper {
 
 		double totalSimulationTime = lastClock;
 		double energy = datacenter.getPower() / (3600 * 1000);
+		double electricalEnergy = datacenter.getElectricalPower() / (3600 *1000);
+		double coolingEnergy = datacenter.getCoolingPower() / (3600 *1000);
 		int numberOfMigrations = datacenter.getMigrationCount();
 
 		Map<String, Double> slaMetrics = getSlaMetrics(vms);
@@ -270,9 +260,15 @@ public class Helper {
 		// double slaTimePerHost = getSlaTimePerHost(hosts);
 		double slaTimePerActiveHost = getSlaTimePerActiveHost(hosts);
 
+		double thermalSLAPerActiveHost = getThermalSlaTimePerActiveHost(hosts);
+
 		double sla = slaTimePerActiveHost * slaDegradationDueToMigration;
 
 		List<Double> timeBeforeHostShutdown = getTimesBeforeHostShutdown(hosts);
+
+		double meanServerTemperature = datacenter.getMeanServerTemperature();
+
+		double thermalViolatingHosts = datacenter.getThermalSLAViolatingServersNumber();
 
 		int numberOfHostShutdowns = timeBeforeHostShutdown.size();
 
@@ -326,6 +322,7 @@ public class Helper {
 			data.append(String.format("%.10f", sla) + delimeter);
 			data.append(String.format("%.10f", slaTimePerActiveHost) + delimeter);
 			data.append(String.format("%.10f", slaDegradationDueToMigration) + delimeter);
+			data.append(String.format("%.2f", meanServerTemperature) + delimeter);
 			data.append(String.format("%.10f", slaOverall) + delimeter);
 			data.append(String.format("%.10f", slaAverage) + delimeter);
 			// data.append(String.format("%.5f", slaTimePerVmWithMigration) + delimeter);
@@ -386,13 +383,18 @@ public class Helper {
 			Log.printLine(String.format("Number of hosts: " + numberOfHosts));
 			Log.printLine(String.format("Number of VMs: " + numberOfVms));
 			Log.printLine(String.format("Total simulation time: %.2f sec", totalSimulationTime));
-			Log.printLine(String.format("Energy consumption: %.2f kWh", energy));
+			Log.printLine(String.format("Electrical energy consumption: %.2f kWh", electricalEnergy));
+			Log.printLine(String.format("Cooling energy consumption: %.2f kWh", coolingEnergy));
+			Log.printLine(String.format("----> Energy consumption: %.2f kWh", energy));
 			Log.printLine(String.format("Number of VM migrations: %d", numberOfMigrations));
 			Log.printLine(String.format("SLA: %.5f%%", sla * 100));
 			Log.printLine(String.format(
 					"SLA perf degradation due to migration: %.2f%%",
 					slaDegradationDueToMigration * 100));
 			Log.printLine(String.format("SLA time per active host: %.2f%%", slaTimePerActiveHost * 100));
+            Log.printLine(String.format("----->Thermal SLA time per active host: %.2f%%", thermalSLAPerActiveHost * 100));
+			Log.printLine(String.format("HeatSupplied %.2f kWh", CoolingSystem.calculateHeatSupplied(electricalEnergy)));
+			Log.printLine(String.format("Average server temperature: %.3f", meanServerTemperature));
 			Log.printLine(String.format("Overall SLA violation: %.2f%%", slaOverall * 100));
 			Log.printLine(String.format("Average SLA violation: %.2f%%", slaAverage * 100));
 			// Log.printLine(String.format("SLA time per VM with migration: %.2f%%",
@@ -518,6 +520,38 @@ public class Helper {
 		}
 
 		return slaViolationTimePerHost / totalTime;
+	}
+
+	/**
+	 * Gets the sla time per active host.
+	 *
+	 * @param hosts the hosts
+	 * @return the sla time per active host
+	 */
+	protected static double getThermalSlaTimePerActiveHost(List<Host> hosts) {
+        double slaViolationTimePerHost = 0;
+        double totalTime = 0;
+
+        for (Host _host : hosts) {
+            PowerHost host = (PowerHost) _host;
+            double previousTime = -1;
+            boolean previousIsActive = true;
+
+            for (ThermalHostStateHistoryEntry entry : host.getThermalStateHistory()) {
+                if (previousTime != -1 && previousIsActive) {
+                    double timeDiff = entry.getTime() - previousTime;
+                    totalTime += timeDiff;
+                    if (entry.getOutletTemperature() > CoolingSystem.CoolingSlaViolationThreshold) {
+                        slaViolationTimePerHost += timeDiff;
+                    }
+                }
+
+                previousTime = entry.getTime();
+                previousIsActive = entry.isActive();
+            }
+        }
+
+        return slaViolationTimePerHost / totalTime;
 	}
 
 	/**

@@ -8,14 +8,14 @@
 
 package org.cloudbus.cloudsim.power;
 
-import org.cloudbus.cloudsim.HostDynamicWorkload;
-import org.cloudbus.cloudsim.Pe;
-import org.cloudbus.cloudsim.VmScheduler;
+import org.cloudbus.cloudsim.*;
 import org.cloudbus.cloudsim.cooling.CoolingSystem;
+import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.power.models.PowerModel;
 import org.cloudbus.cloudsim.provisioners.BwProvisioner;
 import org.cloudbus.cloudsim.provisioners.RamProvisioner;
 
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -49,6 +49,8 @@ public class PowerHost extends HostDynamicWorkload {
 	 */
 	private double tin;
 
+    /** The thermal host utilization state history. */
+    private final List<ThermalHostStateHistoryEntry> thermalStateHistory = new LinkedList<ThermalHostStateHistoryEntry>();
 	/**
 	 * Instantiates a new PowerHost.
 	 *
@@ -187,4 +189,114 @@ public class PowerHost extends HostDynamicWorkload {
 	public void setTin(double tin) {
 		this.tin = tin;
 	}
+
+
+	@Override
+	public double updateVmsProcessing(double currentTime) {
+		double smallerTime = super.updateVmsProcessing(currentTime);
+		setPreviousUtilizationMips(getUtilizationMips());
+		setUtilizationMips(0);
+		double hostTotalRequestedMips = 0;
+
+		for (Vm vm : getVmList()) {
+			getVmScheduler().deallocatePesForVm(vm);
+		}
+
+		for (Vm vm : getVmList()) {
+			getVmScheduler().allocatePesForVm(vm, vm.getCurrentRequestedMips());
+		}
+
+		for (Vm vm : getVmList()) {
+			double totalRequestedMips = vm.getCurrentRequestedTotalMips();
+			double totalAllocatedMips = getVmScheduler().getTotalAllocatedMipsForVm(vm);
+
+			if (!Log.isDisabled()) {
+				Log.formatLine(
+						"%.2f: [Host #" + getId() + "] Total allocated MIPS for VM #" + vm.getId()
+								+ " (Host #" + vm.getHost().getId()
+								+ ") is %.2f, was requested %.2f out of total %.2f (%.2f%%)",
+						CloudSim.clock(),
+						totalAllocatedMips,
+						totalRequestedMips,
+						vm.getMips(),
+						totalRequestedMips / vm.getMips() * 100);
+
+				List<Pe> pes = getVmScheduler().getPesAllocatedForVM(vm);
+				StringBuilder pesString = new StringBuilder();
+				for (Pe pe : pes) {
+					pesString.append(String.format(" PE #" + pe.getId() + ": %.2f.", pe.getPeProvisioner()
+							.getTotalAllocatedMipsForVm(vm)));
+				}
+				Log.formatLine(
+						"%.2f: [Host #" + getId() + "] MIPS for VM #" + vm.getId() + " by PEs ("
+								+ getNumberOfPes() + " * " + getVmScheduler().getPeCapacity() + ")."
+								+ pesString,
+						CloudSim.clock());
+			}
+
+			if (getVmsMigratingIn().contains(vm)) {
+				Log.formatLine("%.2f: [Host #" + getId() + "] VM #" + vm.getId()
+						+ " is being migrated to Host #" + getId(), CloudSim.clock());
+			} else {
+				if (totalAllocatedMips + 0.1 < totalRequestedMips) {
+					Log.formatLine("%.2f: [Host #" + getId() + "] Under allocated MIPS for VM #" + vm.getId()
+							+ ": %.2f", CloudSim.clock(), totalRequestedMips - totalAllocatedMips);
+				}
+
+				vm.addStateHistoryEntry(
+						currentTime,
+						totalAllocatedMips,
+						totalRequestedMips,
+						(vm.isInMigration() && !getVmsMigratingIn().contains(vm)));
+
+				if (vm.isInMigration()) {
+					Log.formatLine(
+							"%.2f: [Host #" + getId() + "] VM #" + vm.getId() + " is in migration",
+							CloudSim.clock());
+					totalAllocatedMips /= 0.9; // performance degradation due to migration - 10%
+				}
+			}
+
+			setUtilizationMips(getUtilizationMips() + totalAllocatedMips);
+			hostTotalRequestedMips += totalRequestedMips;
+		}
+
+		addStateHistoryEntry(
+				currentTime,
+				getUtilizationMips(),
+				hostTotalRequestedMips,
+				(getUtilizationMips() > 0));
+
+		addThermalStateHistoryEntry(currentTime, getTout(), (getUtilizationMips() > 0));
+
+		return smallerTime;
+	}
+
+	/**
+	 * Adds a host state history entry.
+	 *
+	 * @param time the time
+	 * @param outletTemperature the exhaust temperature from the server
+	 * @param isActive the is active
+	 */
+	public
+	void addThermalStateHistoryEntry(double time, double outletTemperature, boolean isActive) {
+
+		ThermalHostStateHistoryEntry newState = new ThermalHostStateHistoryEntry(
+				time,
+                outletTemperature,
+				isActive);
+		if (!getThermalStateHistory().isEmpty()) {
+			ThermalHostStateHistoryEntry previousState = getThermalStateHistory().get(getThermalStateHistory().size() - 1);
+			if (previousState.getTime() == time) {
+				getThermalStateHistory().set(getThermalStateHistory().size() - 1, newState);
+				return;
+			}
+		}
+		getThermalStateHistory().add(newState);
+	}
+
+    public List<ThermalHostStateHistoryEntry> getThermalStateHistory() {
+        return thermalStateHistory;
+    }
 }
